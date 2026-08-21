@@ -1,7 +1,8 @@
-  "use client";
+   "use client";
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { jsPDF } from "jspdf";
 import type {
   TimetableEntry,
   TimetableCourse,
@@ -36,6 +37,64 @@ type TimetableDaySchedule = {
   endTime: string;
   venue: string;
 };
+
+function formatPdfTime(time: string) {
+  const [hourText, minuteText] = time.slice(0, 5).split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return time;
+  }
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+
+  return `${displayHour}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function timeToMinutes(time: string) {
+  const [hour, minute] = time.slice(0, 5).split(":").map(Number);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return 0;
+  }
+
+  return hour * 60 + minute;
+}
+
+function getAcademicYear(semester: Semester) {
+  if (!semester.start_date) {
+    return "";
+  }
+
+  const startYear = Number(semester.start_date.slice(0, 4));
+
+  if (!Number.isFinite(startYear)) {
+    return "";
+  }
+
+  const startMonth = Number(semester.start_date.slice(5, 7));
+
+  // Indian-style academic year: July–December belongs to
+  // the academic year starting in that calendar year, while
+  // January–June belongs to the academic year that started
+  // in the previous calendar year.
+  const academicStartYear =
+    startMonth >= 7 ? startYear : startYear - 1;
+  const academicEndYear = academicStartYear + 1;
+
+  return `${academicStartYear}-${String(academicEndYear).slice(-2)}`;
+}
+
+function sanitizeFileName(value: string) {
+  return value
+    .replace(/[<>:"/\\|?*]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 
 export default function SemesterPage() {
   const supabase = createClient();
@@ -1344,6 +1403,630 @@ const [timetableSaving, setTimetableSaving] =
     );
   }
 
+  async function exportTimetableToPdf() {
+    if (!semester) {
+      setMessage("No active semester found.");
+      return;
+    }
+
+    if (timetableEntries.length === 0) {
+      setMessage("There are no timetable classes to export.");
+      return;
+    }
+
+    const pdf = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const marginX = 12;
+    const headerTop = 12;
+    const gridTop = 45;
+    const headerHeight = 10;
+    const footerY = pageHeight - 8;
+    const gridBottom = footerY - 8;
+    const bodyTop = gridTop + headerHeight;
+
+    const days = [
+      { value: 1, label: "Monday" },
+      { value: 2, label: "Tuesday" },
+      { value: 3, label: "Wednesday" },
+      { value: 4, label: "Thursday" },
+      { value: 5, label: "Friday" },
+      { value: 6, label: "Saturday" },
+    ];
+
+    const timeColumnWidth = 25;
+    const dayColumnWidth =
+      (pageWidth - marginX * 2 - timeColumnWidth) /
+      days.length;
+
+    const allEntries = [...timetableEntries].sort(
+      (a, b) =>
+        timeToMinutes(a.start_time) -
+        timeToMinutes(b.start_time)
+    );
+
+    /*
+     * Keep the PDF timetable consistent with the application's
+     * weekly timetable: 8:00 AM to 6:00 PM.
+     *
+     * If a user has a class outside that range, extend the range
+     * by whole hours rather than clipping the class.
+     *
+     * The grid itself uses ONE-HOUR rows only. Classes can still
+     * start/end at exact times such as 10:30 AM or 3:15 PM; their
+     * blocks are positioned proportionally inside the hourly grid.
+     */
+    const DEFAULT_START_MINUTES = 8 * 60;
+    const DEFAULT_END_MINUTES = 18 * 60;
+
+    const earliestEntry = Math.min(
+      ...allEntries.map((entry) =>
+        timeToMinutes(entry.start_time)
+      )
+    );
+
+    const latestEntry = Math.max(
+      ...allEntries.map((entry) =>
+        timeToMinutes(entry.end_time)
+      )
+    );
+
+    const minMinutes = Math.min(
+      DEFAULT_START_MINUTES,
+      Math.floor(earliestEntry / 60) * 60
+    );
+
+    const maxMinutes = Math.max(
+      DEFAULT_END_MINUTES,
+      Math.ceil(latestEntry / 60) * 60
+    );
+
+    const totalMinutes = maxMinutes - minMinutes;
+    const bodyHeight = gridBottom - bodyTop;
+
+    const timeToY = (minutes: number) =>
+      bodyTop +
+      ((minutes - minMinutes) / totalMinutes) *
+        bodyHeight;
+
+    const courseColors = [
+      [239, 246, 255],
+      [240, 253, 244],
+      [255, 247, 237],
+      [250, 245, 255],
+      [236, 254, 255],
+      [255, 241, 242],
+    ];
+
+    const courseColorMap = new Map<
+      string,
+      [number, number, number]
+    >();
+
+    let colorIndex = 0;
+
+    for (const course of timetableCourses) {
+      courseColorMap.set(
+        course.id,
+        courseColors[
+          colorIndex % courseColors.length
+        ] as [number, number, number]
+      );
+      colorIndex += 1;
+    }
+
+    const academicYear = getAcademicYear(semester);
+
+    const generatedDate = new Intl.DateTimeFormat(
+      undefined,
+      {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }
+    ).format(new Date());
+
+    // =========================================================
+    // PDF HEADER
+    // =========================================================
+
+    pdf.setTextColor(15, 23, 42);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(18);
+
+    pdf.text(
+      "CURRENT SEMESTER TIMETABLE",
+      marginX,
+      headerTop + 4
+    );
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.setTextColor(71, 85, 105);
+
+    const semesterMeta = academicYear
+      ? `${semester.name} · Academic Year ${academicYear}`
+      : semester.name;
+
+    pdf.text(
+      semesterMeta,
+      marginX,
+      headerTop + 11
+    );
+
+    pdf.text(
+      `Generated on ${generatedDate}`,
+      pageWidth - marginX,
+      headerTop + 11,
+      { align: "right" }
+    );
+
+    // =========================================================
+    // TABLE HEADER
+    // =========================================================
+
+    pdf.setFillColor(15, 23, 42);
+
+    pdf.rect(
+      marginX,
+      gridTop,
+      timeColumnWidth,
+      headerHeight,
+      "F"
+    );
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(255, 255, 255);
+
+    pdf.text(
+      "TIME",
+      marginX + timeColumnWidth / 2,
+      gridTop + 6.5,
+      { align: "center" }
+    );
+
+    days.forEach((day, index) => {
+      const x =
+        marginX +
+        timeColumnWidth +
+        index * dayColumnWidth;
+
+      pdf.setFillColor(15, 23, 42);
+
+      pdf.rect(
+        x,
+        gridTop,
+        dayColumnWidth,
+        headerHeight,
+        "F"
+      );
+
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+
+      pdf.text(
+        day.label.toUpperCase(),
+        x + dayColumnWidth / 2,
+        gridTop + 6.5,
+        { align: "center" }
+      );
+    });
+
+    // =========================================================
+    // HOURLY GRID
+    // =========================================================
+
+    /*
+     * Only full-hour rows are drawn and labelled.
+     * There are intentionally NO 30-minute grid rows.
+     */
+    for (
+      let minutes = minMinutes;
+      minutes <= maxMinutes;
+      minutes += 60
+    ) {
+      const y = timeToY(minutes);
+
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setLineWidth(
+        minutes === minMinutes ||
+          minutes === maxMinutes
+          ? 0.35
+          : 0.2
+      );
+
+      pdf.line(
+        marginX,
+        y,
+        pageWidth - marginX,
+        y
+      );
+
+      if (minutes < maxMinutes) {
+        pdf.setTextColor(71, 85, 105);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7);
+
+        pdf.text(
+          formatPdfTime(
+            `${String(
+              Math.floor(minutes / 60)
+            ).padStart(2, "0")}:00`
+          ),
+          marginX + timeColumnWidth / 2,
+          y + 3.2,
+          { align: "center" }
+        );
+      }
+    }
+
+    // =========================================================
+    // VERTICAL GRID LINES
+    // =========================================================
+
+    for (let index = 0; index <= days.length; index += 1) {
+      const x =
+        marginX +
+        timeColumnWidth +
+        index * dayColumnWidth;
+
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setLineWidth(0.2);
+
+      pdf.line(
+        x,
+        bodyTop,
+        x,
+        gridBottom
+      );
+    }
+
+    pdf.setDrawColor(100, 116, 139);
+    pdf.setLineWidth(0.35);
+
+    pdf.line(
+      marginX,
+      bodyTop,
+      marginX,
+      gridBottom
+    );
+
+    // =========================================================
+    // COURSE BLOCKS
+    // =========================================================
+
+    /*
+     * The application allows overlapping classes on the same day.
+     * Examples:
+     *   - two classes at the same time
+     *   - a long class containing a shorter class
+     *   - two classes that partially overlap
+     *
+     * Build horizontal lanes for each day so overlapping entries
+     * are displayed side-by-side instead of one being hidden by
+     * another. Entries that do not overlap can reuse a lane.
+     */
+    const entriesByDay = new Map<number, TimetableEntry[]>();
+
+    for (const entry of allEntries) {
+      const current = entriesByDay.get(entry.day_of_week) ?? [];
+      current.push(entry);
+      entriesByDay.set(entry.day_of_week, current);
+    }
+
+    const laneInfo = new Map<
+      string,
+      { lane: number; laneCount: number }
+    >();
+
+    for (const day of days) {
+      const dayEntries = (
+        entriesByDay.get(day.value) ?? []
+      ).sort(
+        (a, b) =>
+          timeToMinutes(a.start_time) -
+            timeToMinutes(b.start_time) ||
+          timeToMinutes(a.end_time) -
+            timeToMinutes(b.end_time)
+      );
+
+      const laneEndTimes: number[] = [];
+      const assignments: {
+        entry: TimetableEntry;
+        lane: number;
+      }[] = [];
+
+      for (const entry of dayEntries) {
+        const start = timeToMinutes(entry.start_time);
+        const end = timeToMinutes(entry.end_time);
+
+        let lane = laneEndTimes.findIndex(
+          (laneEnd) => laneEnd <= start
+        );
+
+        if (lane === -1) {
+          lane = laneEndTimes.length;
+          laneEndTimes.push(end);
+        } else {
+          laneEndTimes[lane] = end;
+        }
+
+        assignments.push({ entry, lane });
+      }
+
+      /*
+       * For each entry, determine the number of lanes active at
+       * any point during that entry. This makes the width exact
+       * for the local overlap group instead of shrinking every
+       * class on a busy day unnecessarily.
+       */
+      for (const assignment of assignments) {
+        const entryStart = timeToMinutes(
+          assignment.entry.start_time
+        );
+        const entryEnd = timeToMinutes(
+          assignment.entry.end_time
+        );
+
+        const overlapping = assignments.filter(
+          (other) => {
+            const otherStart = timeToMinutes(
+              other.entry.start_time
+            );
+            const otherEnd = timeToMinutes(
+              other.entry.end_time
+            );
+
+            return (
+              otherStart < entryEnd &&
+              otherEnd > entryStart
+            );
+          }
+        );
+
+        const laneCount = Math.max(
+          1,
+          ...overlapping.map(
+            (item) => item.lane + 1
+          )
+        );
+
+        laneInfo.set(assignment.entry.id, {
+          lane: assignment.lane,
+          laneCount,
+        });
+      }
+    }
+
+    for (const entry of allEntries) {
+      const dayIndex = days.findIndex(
+        (day) => day.value === entry.day_of_week
+      );
+
+      if (dayIndex < 0) {
+        continue;
+      }
+
+      const course = timetableCourses.find(
+        (item) => item.id === entry.course_id
+      );
+
+      if (!course) {
+        continue;
+      }
+
+      const startMinutes = timeToMinutes(
+        entry.start_time
+      );
+      const endMinutes = timeToMinutes(
+        entry.end_time
+      );
+
+      if (endMinutes <= startMinutes) {
+        continue;
+      }
+
+      const overlap = laneInfo.get(entry.id) ?? {
+        lane: 0,
+        laneCount: 1,
+      };
+
+      const laneGap = 1.2;
+      const dayX =
+        marginX +
+        timeColumnWidth +
+        dayIndex * dayColumnWidth;
+      const usableWidth =
+        dayColumnWidth - laneGap * (overlap.laneCount + 1);
+      const laneWidth =
+        usableWidth / overlap.laneCount;
+
+      const x =
+        dayX +
+        laneGap +
+        overlap.lane * (laneWidth + laneGap);
+
+      const y = timeToY(startMinutes) + 1.2;
+      const height = Math.max(
+        timeToY(endMinutes) -
+          timeToY(startMinutes) -
+          2.4,
+        8
+      );
+      const width = laneWidth;
+
+      const color =
+        courseColorMap.get(entry.course_id) ??
+        ([241, 245, 249] as [
+          number,
+          number,
+          number
+        ]);
+
+      pdf.setFillColor(
+        color[0],
+        color[1],
+        color[2]
+      );
+      pdf.setDrawColor(148, 163, 184);
+      pdf.setLineWidth(0.25);
+
+      pdf.roundedRect(
+        x,
+        y,
+        width,
+        height,
+        1.5,
+        1.5,
+        "FD"
+      );
+
+      const textX = x + 1.8;
+      const rightX = x + width - 1.8;
+      const maxTextWidth = Math.max(width - 3.6, 8);
+
+      /*
+       * PDF timetable cards intentionally show only the three most
+       * useful schedule fields requested for the exported document:
+       *
+       *   1. Course code
+       *   2. Venue / classroom
+       *   3. Time
+       *
+       * Course name, instructor, and notes remain available in the
+       * application timetable but are intentionally omitted here.
+       */
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(overlap.laneCount > 1 ? 6.8 : 7.4);
+      pdf.text(course.code, textX, y + 4.2);
+
+      const timeLabel = `${formatPdfTime(
+        entry.start_time
+      )} – ${formatPdfTime(entry.end_time)}`;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(51, 65, 85);
+
+      /*
+       * Keep venue and time on the same bottom row for compact cards.
+       * For larger cards, venue gets its own line while time remains
+       * anchored to the bottom-right. This prevents the two fields
+       * from overlapping even when several classes share a day.
+       */
+      if (entry.venue) {
+        pdf.setFontSize(height < 16 ? 4.8 : 5.4);
+
+        const venueLabel = `Venue: ${entry.venue}`;
+        const availableVenueWidth = Math.max(
+          width - 3.6 -
+            pdf.getTextWidth(timeLabel) -
+            3,
+          8
+        );
+
+        const venueLines = pdf.splitTextToSize(
+          venueLabel,
+          availableVenueWidth
+        ) as string[];
+
+        if (height >= 16) {
+          pdf.text(
+            venueLines.slice(0, 1),
+            textX,
+            y + 8.2
+          );
+        } else {
+          pdf.text(
+            venueLines.slice(0, 1),
+            textX,
+            y + height - 1.8
+          );
+        }
+      }
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(height < 16 ? 4.8 : 5.2);
+      pdf.setTextColor(51, 65, 85);
+
+      pdf.text(
+        timeLabel,
+        rightX,
+        y + height - 1.8,
+        { align: "right" }
+      );
+    }
+
+    // =========================================================
+    // OUTER BORDER
+    // =========================================================
+
+    pdf.setDrawColor(100, 116, 139);
+    pdf.setLineWidth(0.35);
+
+    pdf.rect(
+      marginX,
+      gridTop,
+      pageWidth - marginX * 2,
+      gridBottom - gridTop
+    );
+
+    // =========================================================
+    // FOOTER
+    // =========================================================
+
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.2);
+
+    pdf.line(
+      marginX,
+      footerY - 3,
+      pageWidth - marginX,
+      footerY - 3
+    );
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(100, 116, 139);
+
+    pdf.text(
+      `${semester.name} · Timetable · Generated on ${generatedDate}`,
+      marginX,
+      footerY
+    );
+
+    pdf.text(
+      "Page 1",
+      pageWidth - marginX,
+      footerY,
+      { align: "right" }
+    );
+
+    // =========================================================
+    // DOWNLOAD
+    // =========================================================
+
+    const semesterName =
+      sanitizeFileName(semester.name) ||
+      "Current-Semester";
+
+    const yearPart = academicYear
+      ? `-${academicYear}`
+      : "";
+
+    pdf.save(
+      `${semesterName}-Timetable${yearPart}.pdf`
+    );
+  }
+
   // =========================================================
   // PAGE
   // =========================================================
@@ -1738,23 +2421,37 @@ const [timetableSaving, setTimetableSaving] =
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (showTimetableForm) {
-                          handleCancelTimetableForm();
-                        } else {
-                          setEditingTimetableEntry(null);
-                          setShowTimetableForm(true);
-                          setMessage("");
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={exportTimetableToPdf}
+                        disabled={
+                          timetableLoading ||
+                          timetableEntries.length === 0
                         }
-                      }}
-                      className="rounded-xl bg-slate-900 px-5 py-3 font-medium text-white transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-                    >
-                      {showTimetableForm
-                        ? "Close"
-                        : "+ Add Class"}
-                    </button>
+                        className="rounded-xl border border-slate-300 px-5 py-3 font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                      >
+                        Export PDF
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showTimetableForm) {
+                            handleCancelTimetableForm();
+                          } else {
+                            setEditingTimetableEntry(null);
+                            setShowTimetableForm(true);
+                            setMessage("");
+                          }
+                        }}
+                        className="rounded-xl bg-slate-900 px-5 py-3 font-medium text-white transition hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                      >
+                        {showTimetableForm
+                          ? "Close"
+                          : "+ Add Class"}
+                      </button>
+                    </div>
 
                   </div>
 
@@ -1946,5 +2643,3 @@ const [timetableSaving, setTimetableSaving] =
     </main>
   );
 }
-
-
