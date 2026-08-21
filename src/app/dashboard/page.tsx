@@ -1,7 +1,10 @@
-"use client";
+ "use client";
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import TodaysClasses from "./TodaysClasses";
+
+import type { TimetableEntry } from "../semester/timetable-types";
 
 type Semester = {
   id: string;
@@ -14,6 +17,7 @@ type Course = {
   id: string;
   name: string;
   code: string;
+  instructor: string | null;
   max_absences: number;
 };
 
@@ -41,6 +45,9 @@ export default function DashboardPage() {
 
   const [absences, setAbsences] =
     useState<Absence[]>([]);
+
+  const [timetableEntries, setTimetableEntries] =
+    useState<TimetableEntry[]>([]);
 
   const [loading, setLoading] =
     useState(true);
@@ -103,6 +110,7 @@ export default function DashboardPage() {
       setSemester(null);
       setCourses([]);
       setAbsences([]);
+      setTimetableEntries([]);
 
       setMessage(
         "There is no active semester. Create or activate a semester to start tracking your attendance."
@@ -122,7 +130,7 @@ export default function DashboardPage() {
     } = await supabase
       .from("courses")
       .select(
-        "id, name, code, max_absences"
+        "id, name, code, instructor, max_absences"
       )
       .eq("user_id", user.id)
       .eq(
@@ -182,7 +190,46 @@ export default function DashboardPage() {
     }
 
     // -------------------------------------------------------
-    // 5. SAVE CURRENT SEMESTER DATA
+    // 5. LOAD TIMETABLE FOR ACTIVE SEMESTER
+    //
+    // The timetable is the single source of truth
+    // for Today's Classes.
+    // -------------------------------------------------------
+
+    const {
+      data: timetableData,
+      error: timetableError,
+    } = await supabase
+      .from("timetable_entries")
+      .select(
+        "id, user_id, semester_id, course_id, day_of_week, start_time, end_time, venue, notes, created_at"
+      )
+      .eq("user_id", user.id)
+      .eq(
+        "semester_id",
+        semesterData.id
+      )
+      .order("start_time");
+
+    if (timetableError) {
+      /*
+       * Do not break the entire Dashboard if the timetable
+       * query fails. Existing attendance/dashboard features
+       * should continue to work.
+       */
+      setMessage(
+        `Dashboard loaded, but today's timetable could not be loaded: ${timetableError.message}`
+      );
+
+      setTimetableEntries([]);
+    } else {
+      setTimetableEntries(
+        timetableData ?? []
+      );
+    }
+
+    // -------------------------------------------------------
+    // 6. SAVE CURRENT SEMESTER DATA
     // -------------------------------------------------------
 
     setSemester({
@@ -407,7 +454,6 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10 dark:bg-slate-950">
-
       <div className="mx-auto w-full max-w-6xl">
 
         {/* =================================================
@@ -415,7 +461,6 @@ export default function DashboardPage() {
         ================================================= */}
 
         <div className="mb-10">
-
           <h1 className="text-4xl font-bold text-slate-900 dark:text-slate-100">
             Dashboard
           </h1>
@@ -423,7 +468,6 @@ export default function DashboardPage() {
           <p className="mt-2 text-slate-500 dark:text-slate-400">
             Welcome to your Absent dashboard
           </p>
-
         </div>
 
         {/* =================================================
@@ -441,11 +485,9 @@ export default function DashboardPage() {
         ================================================= */}
 
         <div className="mb-6 rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-900 dark:shadow-none">
-
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
             <div>
-
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Current Semester
               </p>
@@ -464,7 +506,6 @@ export default function DashboardPage() {
                     "No end date"}
                 </p>
               )}
-
             </div>
 
             <a
@@ -475,31 +516,20 @@ export default function DashboardPage() {
             </a>
 
           </div>
-
         </div>
 
         {/* =================================================
-            COURSE SUMMARY
+            TODAY'S CLASSES
         ================================================= */}
 
-        <div className="mb-8">
-          <a
-            href="/courses"
-            className="block rounded-2xl bg-white p-6 shadow-sm transition hover:shadow-md dark:bg-slate-900 dark:shadow-none dark:hover:bg-slate-800"
-          >
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Courses
-            </p>
-
-            <p className="mt-2 text-4xl font-bold text-slate-900 dark:text-slate-100">
-              {courses.length}
-            </p>
-
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Manage your courses →
-            </p>
-          </a>
-        </div>
+        {semester && (
+          <div className="mb-8">
+            <TodaysClasses
+              entries={timetableEntries}
+              courses={courses}
+            />
+          </div>
+        )}
 
         {/* =================================================
             SEMESTER HEALTH
@@ -509,7 +539,6 @@ export default function DashboardPage() {
           <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-900 dark:shadow-none">
 
             <div className="mb-6">
-
               <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
                 Semester Health
               </h2>
@@ -518,7 +547,6 @@ export default function DashboardPage() {
                 A quick overview of your current
                 absence situation.
               </p>
-
             </div>
 
             {/* OVERALL HEALTH */}
@@ -526,7 +554,6 @@ export default function DashboardPage() {
             <div
               className={`mb-6 rounded-xl border p-5 ${overallHealth.className}`}
             >
-
               <div className="flex items-start gap-4">
 
                 <span className="text-3xl">
@@ -534,7 +561,6 @@ export default function DashboardPage() {
                 </span>
 
                 <div>
-
                   <h3 className="text-lg font-semibold">
                     {overallHealth.title}
                   </h3>
@@ -542,11 +568,9 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm">
                     {overallHealth.description}
                   </p>
-
                 </div>
 
               </div>
-
             </div>
 
             {/* HEALTH COUNTS */}
@@ -556,7 +580,6 @@ export default function DashboardPage() {
               {/* SAFE */}
 
               <div className="rounded-xl bg-green-50 p-5 dark:bg-green-950/30">
-
                 <p className="text-sm font-medium text-green-700 dark:text-green-300">
                   🟢 Safe
                 </p>
@@ -570,13 +593,11 @@ export default function DashboardPage() {
                     ? "course"
                     : "courses"}
                 </p>
-
               </div>
 
               {/* WARNING */}
 
               <div className="rounded-xl bg-yellow-50 p-5 dark:bg-yellow-950/30">
-
                 <p className="text-sm font-medium text-yellow-700 dark:text-yellow-300">
                   🟡 Getting Close
                 </p>
@@ -590,13 +611,11 @@ export default function DashboardPage() {
                     ? "course"
                     : "courses"}
                 </p>
-
               </div>
 
               {/* LIMIT */}
 
               <div className="rounded-xl bg-red-50 p-5 dark:bg-red-950/30">
-
                 <p className="text-sm font-medium text-red-700 dark:text-red-300">
                   🔴 Limit Reached
                 </p>
@@ -610,11 +629,9 @@ export default function DashboardPage() {
                     ? "course"
                     : "courses"}
                 </p>
-
               </div>
 
             </div>
-
           </div>
         )}
 
@@ -626,7 +643,6 @@ export default function DashboardPage() {
           <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-900 dark:shadow-none">
 
             <div className="mb-6">
-
               <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
                 Attendance Overview
               </h2>
@@ -634,13 +650,11 @@ export default function DashboardPage() {
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 See your absence allowance for each course.
               </p>
-
             </div>
 
             {courses.length === 0 ? (
 
               <div className="rounded-xl bg-slate-50 p-5 dark:bg-slate-800">
-
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   No courses added for this semester.
                 </p>
@@ -651,7 +665,6 @@ export default function DashboardPage() {
                 >
                   Add courses →
                 </a>
-
               </div>
 
             ) : (
@@ -700,7 +713,6 @@ export default function DashboardPage() {
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
                           <div>
-
                             <h3 className="font-semibold text-slate-900 dark:text-slate-100">
                               {course.name}
                             </h3>
@@ -708,7 +720,6 @@ export default function DashboardPage() {
                             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                               {course.code}
                             </p>
-
                           </div>
 
                           <span
@@ -797,7 +808,6 @@ export default function DashboardPage() {
             <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm dark:bg-slate-900 dark:shadow-none">
 
               <div className="mb-6">
-
                 <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
                   Recovery Recommendations
                 </h2>
@@ -806,7 +816,6 @@ export default function DashboardPage() {
                   Simple guidance based on your
                   current absence limits.
                 </p>
-
               </div>
 
               <div className="space-y-4">
@@ -825,7 +834,6 @@ export default function DashboardPage() {
                         </span>
 
                         <div>
-
                           <h3 className="font-semibold text-red-800 dark:text-red-300">
                             {course.name}
                           </h3>
@@ -835,7 +843,6 @@ export default function DashboardPage() {
                             absence limit. Avoid further
                             absences in this course.
                           </p>
-
                         </div>
 
                       </div>
@@ -869,7 +876,6 @@ export default function DashboardPage() {
                           </span>
 
                           <div>
-
                             <h3 className="font-semibold text-yellow-800 dark:text-yellow-300">
                               {course.name}
                             </h3>
@@ -885,7 +891,6 @@ export default function DashboardPage() {
                               remaining. Try to avoid
                               unnecessary absences.
                             </p>
-
                           </div>
 
                         </div>
@@ -908,9 +913,8 @@ export default function DashboardPage() {
                         </span>
 
                         <div>
-
                           <h3 className="font-semibold text-green-800 dark:text-green-300">
-                            You're doing well
+                            You&apos;re doing well
                           </h3>
 
                           <p className="mt-1 text-sm text-green-700 dark:text-green-400">
@@ -918,7 +922,6 @@ export default function DashboardPage() {
                             have a comfortable absence
                             allowance.
                           </p>
-
                         </div>
 
                       </div>
@@ -946,7 +949,9 @@ export default function DashboardPage() {
               )
             }
             className="flex w-full items-center justify-between p-6 text-left"
-            aria-expanded={showRecentAbsences}
+            aria-expanded={
+              showRecentAbsences
+            }
           >
             <div>
               <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
@@ -961,7 +966,9 @@ export default function DashboardPage() {
             </div>
 
             <span className="ml-4 text-xl text-slate-500 dark:text-slate-400">
-              {showRecentAbsences ? "▲" : "▼"}
+              {showRecentAbsences
+                ? "▲"
+                : "▼"}
             </span>
           </button>
 
@@ -969,27 +976,37 @@ export default function DashboardPage() {
             <div className="border-t border-slate-200 px-6 pb-6 pt-4 dark:border-slate-700">
 
               {absences.length === 0 ? (
+
                 <div className="rounded-xl bg-slate-50 p-5 dark:bg-slate-800">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     No absences recorded for the current semester.
                   </p>
                 </div>
+
               ) : (
+
                 <div className="space-y-3">
+
                   {absences
                     .slice(0, 5)
                     .map((absence) => (
+
                       <div
                         key={absence.id}
                         className="flex flex-col gap-2 rounded-xl border border-slate-200 p-4 dark:border-slate-700 dark:bg-slate-800 sm:flex-row sm:items-center sm:justify-between"
                       >
+
                         <div>
                           <p className="font-medium text-slate-900 dark:text-slate-100">
-                            {getCourseName(absence.course_id)}
+                            {getCourseName(
+                              absence.course_id
+                            )}
                           </p>
 
                           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                            {getCourseCode(absence.course_id)}
+                            {getCourseCode(
+                              absence.course_id
+                            )}
                           </p>
                         </div>
 
@@ -1004,9 +1021,12 @@ export default function DashboardPage() {
                             </p>
                           )}
                         </div>
+
                       </div>
                     ))}
+
                 </div>
+
               )}
 
               <a
@@ -1015,8 +1035,10 @@ export default function DashboardPage() {
               >
                 View all absences →
               </a>
+
             </div>
           )}
+
         </div>
 
       </div>
