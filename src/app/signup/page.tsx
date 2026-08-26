@@ -48,7 +48,7 @@ export default function SignupPage() {
           </h1>
 
           <p className="mt-2 text-slate-500">
-            Create your Absent account
+            Create your Academic account
           </p>
         </div>
 

@@ -466,7 +466,7 @@ export default function DashboardPage() {
           </h1>
 
           <p className="mt-2 text-slate-500 dark:text-slate-400">
-            Welcome to your Absent dashboard
+            Welcome to your Academic dashboard
           </p>
         </div>
 

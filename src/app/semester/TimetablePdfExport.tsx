@@ -475,7 +475,7 @@ function drawPageHeader(
   );
 
   doc.text(
-    "ABSENT",
+    "ACADEMIC",
     PAGE_MARGIN,
     12
   );
@@ -1264,8 +1264,8 @@ export default function TimetablePdfExport({
         title: `${semester.name} Timetable`,
         subject:
           "Current Semester Timetable",
-        author: "Absent",
-        creator: "Absent",
+        author: "Academic",
+        creator: "Academic",
         keywords:
           "timetable, semester, academic schedule",
       });

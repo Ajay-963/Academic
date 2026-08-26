@@ -60,7 +60,7 @@ export default function Navbar() {
             onClick={closeMenu}
             className="text-xl font-bold text-slate-900 dark:text-white"
           >
-            Absent
+            Academic
           </a>
 
           {/* DESKTOP MENU */}

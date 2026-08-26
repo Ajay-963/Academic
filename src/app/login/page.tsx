@@ -60,7 +60,7 @@ export default function LoginPage() {
           </h1>
 
           <p className="mt-2 text-slate-500 dark:text-slate-400">
-            Login to your Absent account
+            Login to your Academic account
           </p>
         </div>
 

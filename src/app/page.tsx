@@ -4,11 +4,11 @@
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold text-slate-900">
-            Absent
+            Academic
           </h1>
 
           <p className="mt-2 text-slate-500">
-            Academic Absence Management
+            Manage Your Academic Life
           </p>
         </div>
 

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Absent",
-  description: "Academic Absence Management",
+  title: "Academic",
+  description: "Academic Management",
 };
 
 export default function RootLayout({
