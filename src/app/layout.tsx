@@ -14,8 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Academic",
-  description: "Academic Management",
+  title: {
+    default: "Academic",
+    template: "%s | Academic",
+  },
+  description:
+    "Manage your semesters, courses, absences, and academic schedule in one place.",
 };
 
 export default function RootLayout({
