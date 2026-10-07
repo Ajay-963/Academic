@@ -233,10 +233,10 @@ export default function Home() {
               <div className="p-4 sm:p-6">
                 <div className="mb-5">
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Dashboard
+                    Dashboard preview
                   </p>
                   <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
-                    Welcome back
+                    Your academic life, at a glance
                   </h2>
                 </div>
 
@@ -246,7 +246,7 @@ export default function Home() {
                       Current semester
                     </p>
                     <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
-                      Semester 6
+                      Your semester
                     </p>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                       <div className="h-full w-3/4 rounded-full bg-slate-900 dark:bg-white" />
@@ -258,10 +258,10 @@ export default function Home() {
                       Courses
                     </p>
                     <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
-                      6 active
+                      Your courses
                     </p>
                     <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">
-                      Everything looks good
+                      Stay organized
                     </p>
                   </div>
                 </div>
@@ -270,10 +270,10 @@ export default function Home() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Today
+                        Weekly schedule
                       </p>
                       <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        Your academic schedule
+                        Keep your classes organized
                       </p>
                     </div>
 
