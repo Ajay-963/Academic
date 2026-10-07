@@ -51,6 +51,7 @@ export async function proxy(request: NextRequest) {
     "/semester",
     "/courses",
     "/absences",
+    "/profile",
   ];
 
   const isProtectedRoute = protectedRoutes.some(
@@ -77,5 +78,6 @@ export const config = {
     "/semester/:path*",
     "/courses/:path*",
     "/absences/:path*",
+    "/profile/:path*",
   ],
 };
