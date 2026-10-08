@@ -16,25 +16,17 @@ export async function proxy(request: NextRequest) {
         },
 
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(
-            ({ name, value }) => {
-              request.cookies.set(name, value);
-            }
-          );
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
 
           response = NextResponse.next({
             request,
           });
 
-          cookiesToSet.forEach(
-            ({ name, value, options }) => {
-              response.cookies.set(
-                name,
-                value,
-                options
-              );
-            }
-          );
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
         },
       },
     }
@@ -42,6 +34,7 @@ export async function proxy(request: NextRequest) {
 
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
@@ -52,6 +45,7 @@ export async function proxy(request: NextRequest) {
     "/courses",
     "/absences",
     "/profile",
+    "/settings",
   ];
 
   const isProtectedRoute = protectedRoutes.some(
@@ -60,7 +54,7 @@ export async function proxy(request: NextRequest) {
       pathname.startsWith(`${route}/`)
   );
 
-  if (!user && isProtectedRoute) {
+  if (isProtectedRoute && (authError || !user)) {
     const loginUrl = request.nextUrl.clone();
 
     loginUrl.pathname = "/login";
@@ -79,5 +73,6 @@ export const config = {
     "/courses/:path*",
     "/absences/:path*",
     "/profile/:path*",
+    "/settings/:path*",
   ],
 };
