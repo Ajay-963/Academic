@@ -1,8 +1,10 @@
 # Academic
 
-> A personal semester and academic management web application that helps students manage semesters, courses, timetables, absence limits, and recovery status — all in one place.
+> 🎓 Stop guessing. Start tracking. **Academic** is the smart way for students to stay on top of their semesters, courses, timetables, and absences — know exactly how many classes you can miss before it matters.
 
 ## 🌐 Live Application
+
+**Production:** [https://absence-sigma.vercel.app](https://absence-sigma.vercel.app)
 
 **GitHub Repository:** [https://github.com/Ajay-963/Academic](https://github.com/Ajay-963/Academic)
 
